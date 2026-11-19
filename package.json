@@ -15,7 +15,7 @@
     "check:protocol": "pnpm run gen:protocol && git diff --exit-code -- packages/adapter/src/generated",
     "test": "pnpm run test:core && pnpm run check:protocol && pnpm run typecheck && pnpm run test:contract",
     "test:core": "cargo test --workspace",
-    "test:contract": "pnpm run build:core && node --test tests/contract/core-adapter.test.ts",
+    "test:contract": "pnpm run build:core && node --test tests/contract/core-adapter.test.ts tests/contract/degrade-contract.test.ts",
     "typecheck": "pnpm run typecheck:adapter && pnpm run typecheck:contract",
     "typecheck:adapter": "tsc -p packages/adapter/tsconfig.json --noEmit",
     "typecheck:contract": "tsc -p tests/contract/tsconfig.json --noEmit"

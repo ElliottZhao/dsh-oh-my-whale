@@ -121,6 +121,65 @@ pub struct ObservationList {
     pub observations: Vec<Observation>,
 }
 
+/// Ledger 条目的类别：每次出站、每次注入、每次降级、每次写入都各记一类。
+///
+/// 降级编码表见 [`crate::degrade`]；本类型只定义分类，不定义具体编码。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum LedgerKind {
+    /// 一次真实出站调用：用途、provider、模型、时间。
+    Outbound,
+    /// 一轮记忆注入：注入了什么、为什么、占了哪些预算。
+    Injection,
+    /// 一次降级：编码见 `degrade` 模块。
+    Degradation,
+    /// 一次状态变更：写入条目、置失效、确认删除等。
+    Change,
+}
+
+/// 注入解释里的一条入选条目：id、分数、路径与预算占用。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InjectedItem {
+    pub item_id: String,
+    pub score: f64,
+    /// 这条的贡献来自哪条路径：`lexical` / `semantic` / `rerank`。
+    pub path: String,
+    /// 这条在本轮 View 里占用的 token 数，口径由 #29 的 Core 实现给出。
+    pub token_count: u32,
+}
+
+/// 注入解释里「为什么没注入那一条」：候选 id 与稳定的跳过原因。
+///
+/// 跳过原因是正常行为（去重、低分、弃权、预算），不是降级；降级另见
+/// [`crate::degrade`]。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SkippedRecall {
+    pub item_id: String,
+    /// 稳定编码，取值见 `degrade::SKIP_ALL`。
+    pub reason: String,
+}
+
+/// 一轮注入的完整解释，可直接落成一张表。
+///
+/// 字段足以回答「本轮为什么注入这些、为什么没注入那些」：入选条目的 id、分数、
+/// 路径与 token 占用，被跳过条目的原因，以及本轮整体预算与发生过的降级编码。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InjectionExplanation {
+    pub turn: i64,
+    pub session_id: String,
+    pub items: Vec<InjectedItem>,
+    pub skipped: Vec<SkippedRecall>,
+    /// 本轮注入消耗的 token 数。
+    pub token_count: u32,
+    /// 本轮允许的 token 预算。
+    pub budget_tokens: u32,
+    /// 本轮发生过的降级编码；正常轮为空。
+    pub degraded: Vec<String>,
+}
+
 /// Provider 能提供的模型能力类别，按能力而非业务划分。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -243,6 +302,10 @@ pub struct WireContract {
     pub create_observation_request: CreateObservationRequest,
     pub observation: Observation,
     pub observation_list: ObservationList,
+    pub ledger_kind: LedgerKind,
+    pub injected_item: InjectedItem,
+    pub skipped_recall: SkippedRecall,
+    pub injection_explanation: InjectionExplanation,
     pub capability: Capability,
     pub role: Role,
     pub credential_kind: CredentialKind,

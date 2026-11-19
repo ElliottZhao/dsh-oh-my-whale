@@ -42,10 +42,25 @@ async function main() {
   });
 
   const major = String(bundle.protocolVersion).split(".")[0];
+  const degradationCodes = bundle.degradationCodes ?? [];
+  const skipCodes = bundle.injectionSkipCodes ?? [];
+  const degradationMessages = bundle.degradationMessages ?? {};
   const body = [
     HEADER,
     `export const PROTOCOL_VERSION = ${JSON.stringify(bundle.protocolVersion)};`,
     `export const PROTOCOL_MAJOR = ${major};`,
+    "",
+    "// 降级编码与跳过原因同样是契约；编码表由 Rust 侧 `degrade` 模块导出。",
+    `export const DEGRADATION_CODES = ${JSON.stringify(degradationCodes, null, 2)} as const;`,
+    "export type DegradationCode = (typeof DEGRADATION_CODES)[number];",
+    `export const DEGRADATION_MESSAGES: Record<DegradationCode, string> = ${JSON.stringify(
+      degradationMessages,
+      null,
+      2,
+    )};`,
+    "",
+    `export const INJECTION_SKIP_CODES = ${JSON.stringify(skipCodes, null, 2)} as const;`,
+    "export type InjectionSkipCode = (typeof INJECTION_SKIP_CODES)[number];",
     "",
     "// 运行时校验也读这份 schema，因此它随类型一起生成，不单独维护。",
     `export const PROTOCOL_SCHEMA: Record<string, unknown> = ${JSON.stringify(schema, null, 2)};`,

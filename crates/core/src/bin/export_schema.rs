@@ -6,8 +6,10 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use omw_core::degrade;
 use omw_core::protocol::{PROTOCOL_VERSION, WireContract};
 use schemars::generate::SchemaSettings;
+use serde_json::{Map, Value};
 
 fn main() -> ExitCode {
     match run() {
@@ -32,9 +34,19 @@ fn run() -> Result<(), String> {
     let schema_json =
         serde_json::to_value(&schema).map_err(|error| format!("无法序列化 schema：{error}"))?;
 
+    // 降级编码与跳过原因不是 wire 类型，但同样是 Adapter 要照抄的契约；
+    // 一起导出，生成脚本才会把它们写进 TypeScript 常量表。
+    let mut messages = Map::new();
+    for code in degrade::ALL {
+        messages.insert((*code).to_owned(), Value::String(degrade::message(code)));
+    }
+
     let bundle = serde_json::json!({
         "protocolVersion": PROTOCOL_VERSION,
         "schema": schema_json,
+        "degradationCodes": degrade::ALL,
+        "degradationMessages": messages,
+        "injectionSkipCodes": degrade::SKIP_ALL,
     });
     let path = out_dir.join("protocol.json");
     let body = serde_json::to_string_pretty(&bundle)

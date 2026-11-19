@@ -5,6 +5,7 @@
 //! loopback HTTP 边界，`config` 是启动参数。Core 不监听外网。
 
 pub mod config;
+pub mod degrade;
 pub mod loopback;
 pub mod protocol;
 pub mod provider;

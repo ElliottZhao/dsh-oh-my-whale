@@ -6,6 +6,51 @@
 export const PROTOCOL_VERSION = "1.0.0";
 export const PROTOCOL_MAJOR = 1;
 
+// 降级编码与跳过原因同样是契约；编码表由 Rust 侧 `degrade` 模块导出。
+export const DEGRADATION_CODES = [
+  "llm_not_configured",
+  "role_unconfigured",
+  "recall_timeout",
+  "extraction_failed",
+  "index_unavailable",
+  "core_unreachable",
+  "outbound_blocked",
+  "injection_deadline",
+  "extraction_timeout",
+  "extraction_provider_error",
+  "extraction_invalid_json",
+  "extraction_schema_mismatch",
+  "evidence_not_found",
+  "extraction_empty_response",
+  "extraction_unavailable"
+] as const;
+export type DegradationCode = (typeof DEGRADATION_CODES)[number];
+export const DEGRADATION_MESSAGES: Record<DegradationCode, string> = {
+  "core_unreachable": "连不上本机内核：本轮没有记忆，对话照常进行。",
+  "evidence_not_found": "证据摘录在来源观察里找不到：整条拒绝写入。",
+  "extraction_empty_response": "抽取返回了空内容：这批观察没有被理解。",
+  "extraction_failed": "抽取失败：这批观察没有被理解，原样保留以便重抽。",
+  "extraction_invalid_json": "抽取输出不是合法 JSON：这批观察没有被理解。",
+  "extraction_provider_error": "抽取 provider 报错：这批观察没有被理解。",
+  "extraction_schema_mismatch": "抽取输出结构不符：不合格的条目被拒绝，合格的条目照常写入。",
+  "extraction_timeout": "抽取调用超时：这批观察没有被理解。",
+  "extraction_unavailable": "抽取角色不可用：这一轮只记录观察，不做理解。",
+  "index_unavailable": "向量或重排能力不可用：已退回全文检索基线。",
+  "injection_deadline": "注入超过了自建 deadline：本轮放弃注入，回合继续。",
+  "llm_not_configured": "没有配置语言模型：这一轮只记录观察，不做理解。",
+  "outbound_blocked": "出站目标不在白名单：请求被拒绝，未发出。",
+  "recall_timeout": "召回超过了预算：本轮按无记忆继续，不阻塞回合。",
+  "role_unconfigured": "所需的能力角色没有绑定 provider：这一步被跳过。"
+};
+
+export const INJECTION_SKIP_CODES = [
+  "budget_exhausted",
+  "duplicate",
+  "low_score",
+  "abstained"
+] as const;
+export type InjectionSkipCode = (typeof INJECTION_SKIP_CODES)[number];
+
 // 运行时校验也读这份 schema，因此它随类型一起生成，不单独维护。
 export const PROTOCOL_SCHEMA: Record<string, unknown> = {
   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -190,6 +235,115 @@ export const PROTOCOL_SCHEMA: Record<string, unknown> = {
         "startedAt"
       ],
       "type": "object"
+    },
+    "InjectedItem": {
+      "additionalProperties": false,
+      "description": "注入解释里的一条入选条目：id、分数、路径与预算占用。",
+      "properties": {
+        "itemId": {
+          "type": "string"
+        },
+        "path": {
+          "description": "这条的贡献来自哪条路径：`lexical` / `semantic` / `rerank`。",
+          "type": "string"
+        },
+        "score": {
+          "format": "double",
+          "type": "number"
+        },
+        "tokenCount": {
+          "description": "这条在本轮 View 里占用的 token 数，口径由 #29 的 Core 实现给出。",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "itemId",
+        "score",
+        "path",
+        "tokenCount"
+      ],
+      "type": "object"
+    },
+    "InjectionExplanation": {
+      "additionalProperties": false,
+      "description": "一轮注入的完整解释，可直接落成一张表。\n\n字段足以回答「本轮为什么注入这些、为什么没注入那些」：入选条目的 id、分数、\n路径与 token 占用，被跳过条目的原因，以及本轮整体预算与发生过的降级编码。",
+      "properties": {
+        "budgetTokens": {
+          "description": "本轮允许的 token 预算。",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "degraded": {
+          "description": "本轮发生过的降级编码；正常轮为空。",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/InjectedItem"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "skipped": {
+          "items": {
+            "$ref": "#/definitions/SkippedRecall"
+          },
+          "type": "array"
+        },
+        "tokenCount": {
+          "description": "本轮注入消耗的 token 数。",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "turn": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "turn",
+        "sessionId",
+        "items",
+        "skipped",
+        "tokenCount",
+        "budgetTokens",
+        "degraded"
+      ],
+      "type": "object"
+    },
+    "LedgerKind": {
+      "description": "Ledger 条目的类别：每次出站、每次注入、每次降级、每次写入都各记一类。\n\n降级编码表见 [`crate::degrade`]；本类型只定义分类，不定义具体编码。",
+      "oneOf": [
+        {
+          "const": "outbound",
+          "description": "一次真实出站调用：用途、provider、模型、时间。",
+          "type": "string"
+        },
+        {
+          "const": "injection",
+          "description": "一轮记忆注入：注入了什么、为什么、占了哪些预算。",
+          "type": "string"
+        },
+        {
+          "const": "degradation",
+          "description": "一次降级：编码见 `degrade` 模块。",
+          "type": "string"
+        },
+        {
+          "const": "change",
+          "description": "一次状态变更：写入条目、置失效、确认删除等。",
+          "type": "string"
+        }
+      ]
     },
     "Observation": {
       "description": "已落盘的 Observation。`occurredAt` 是事件时刻，由请求给出或用摄入时刻补。",
@@ -424,6 +578,24 @@ export const PROTOCOL_SCHEMA: Record<string, unknown> = {
         "chain"
       ],
       "type": "object"
+    },
+    "SkippedRecall": {
+      "additionalProperties": false,
+      "description": "注入解释里「为什么没注入那一条」：候选 id 与稳定的跳过原因。\n\n跳过原因是正常行为（去重、低分、弃权、预算），不是降级；降级另见\n[`crate::degrade`]。",
+      "properties": {
+        "itemId": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "稳定编码，取值见 `degrade::SKIP_ALL`。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "itemId",
+        "reason"
+      ],
+      "type": "object"
     }
   },
   "description": "导出 JSON Schema 时把全部 wire 类型收进来的根对象。\n\n它只服务代码生成，不出现在任何请求或响应里。",
@@ -455,6 +627,15 @@ export const PROTOCOL_SCHEMA: Record<string, unknown> = {
     "handshakeResponse": {
       "$ref": "#/definitions/HandshakeResponse"
     },
+    "injectedItem": {
+      "$ref": "#/definitions/InjectedItem"
+    },
+    "injectionExplanation": {
+      "$ref": "#/definitions/InjectionExplanation"
+    },
+    "ledgerKind": {
+      "$ref": "#/definitions/LedgerKind"
+    },
     "observation": {
       "$ref": "#/definitions/Observation"
     },
@@ -481,6 +662,9 @@ export const PROTOCOL_SCHEMA: Record<string, unknown> = {
     },
     "roleChain": {
       "$ref": "#/definitions/RoleChain"
+    },
+    "skippedRecall": {
+      "$ref": "#/definitions/SkippedRecall"
     }
   },
   "required": [
@@ -493,6 +677,10 @@ export const PROTOCOL_SCHEMA: Record<string, unknown> = {
     "createObservationRequest",
     "observation",
     "observationList",
+    "ledgerKind",
+    "injectedItem",
+    "skippedRecall",
+    "injectionExplanation",
     "capability",
     "role",
     "credentialKind",
@@ -516,6 +704,12 @@ export type Capability = "llm" | "embedding" | "crossEncoder" | "decision";
  */
 export type CredentialKind = "env" | "file";
 /**
+ * Ledger 条目的类别：每次出站、每次注入、每次降级、每次写入都各记一类。
+ *
+ * 降级编码表见 [`crate::degrade`]；本类型只定义分类，不定义具体编码。
+ */
+export type LedgerKind = "outbound" | "injection" | "degradation" | "change";
+/**
  * Core 内部对某类工作的具名需求。
  */
 export type Role = "extraction" | "queryRewrite" | "ranking" | "abstention";
@@ -535,6 +729,9 @@ export interface WireContract {
   errorPayload: ErrorPayload;
   handshakeRequest: HandshakeRequest;
   handshakeResponse: HandshakeResponse;
+  injectedItem: InjectedItem;
+  injectionExplanation: InjectionExplanation;
+  ledgerKind: LedgerKind;
   observation: Observation;
   observationList: ObservationList;
   providerConfig: ProviderConfig;
@@ -544,6 +741,7 @@ export interface WireContract {
   role: Role;
   roleBinding: RoleBinding;
   roleChain: RoleChain;
+  skippedRecall: SkippedRecall;
 }
 /**
  * 两端共享的版本与进程信息。握手响应与 ready 行都平铺这几个字段。
@@ -609,6 +807,58 @@ export interface HandshakeResponse {
    * 本次进程启动的时间；重启会变。
    */
   startedAt: string;
+}
+/**
+ * 注入解释里的一条入选条目：id、分数、路径与预算占用。
+ */
+export interface InjectedItem {
+  itemId: string;
+  /**
+   * 这条的贡献来自哪条路径：`lexical` / `semantic` / `rerank`。
+   */
+  path: string;
+  score: number;
+  /**
+   * 这条在本轮 View 里占用的 token 数，口径由 #29 的 Core 实现给出。
+   */
+  tokenCount: number;
+}
+/**
+ * 一轮注入的完整解释，可直接落成一张表。
+ *
+ * 字段足以回答「本轮为什么注入这些、为什么没注入那些」：入选条目的 id、分数、
+ * 路径与 token 占用，被跳过条目的原因，以及本轮整体预算与发生过的降级编码。
+ */
+export interface InjectionExplanation {
+  /**
+   * 本轮允许的 token 预算。
+   */
+  budgetTokens: number;
+  /**
+   * 本轮发生过的降级编码；正常轮为空。
+   */
+  degraded: string[];
+  items: InjectedItem[];
+  sessionId: string;
+  skipped: SkippedRecall[];
+  /**
+   * 本轮注入消耗的 token 数。
+   */
+  tokenCount: number;
+  turn: number;
+}
+/**
+ * 注入解释里「为什么没注入那一条」：候选 id 与稳定的跳过原因。
+ *
+ * 跳过原因是正常行为（去重、低分、弃权、预算），不是降级；降级另见
+ * [`crate::degrade`]。
+ */
+export interface SkippedRecall {
+  itemId: string;
+  /**
+   * 稳定编码，取值见 `degrade::SKIP_ALL`。
+   */
+  reason: string;
 }
 /**
  * 已落盘的 Observation。`occurredAt` 是事件时刻，由请求给出或用摄入时刻补。

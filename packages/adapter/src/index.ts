@@ -7,17 +7,29 @@ export {
 } from "./connection.ts";
 export { CoreProtocolError, CoreUnreachableError } from "./errors.ts";
 export { ADAPTER_VERSION } from "./version.ts";
-export { PROTOCOL_MAJOR, PROTOCOL_VERSION } from "./generated/protocol.generated.ts";
+export {
+  DEGRADATION_CODES,
+  DEGRADATION_MESSAGES,
+  INJECTION_SKIP_CODES,
+  PROTOCOL_MAJOR,
+  PROTOCOL_SCHEMA,
+  PROTOCOL_VERSION,
+} from "./generated/protocol.generated.ts";
 export type {
   Capability,
   CoreIdentity,
   CreateObservationRequest,
   CredentialKind,
   CredentialRef,
+  DegradationCode,
   ErrorBody,
   ErrorPayload,
   HandshakeRequest,
   HandshakeResponse,
+  InjectedItem,
+  InjectionExplanation,
+  InjectionSkipCode,
+  LedgerKind,
   Observation,
   ObservationList,
   ProviderConfig,
@@ -27,4 +39,5 @@ export type {
   Role,
   RoleBinding,
   RoleChain,
+  SkippedRecall,
 } from "./generated/protocol.generated.ts";
