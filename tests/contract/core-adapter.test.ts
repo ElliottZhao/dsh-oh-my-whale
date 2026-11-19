@@ -458,13 +458,18 @@ describe("两端契约", () => {
       const configPath = await tempConfigPath();
       const core = await startCore({ dataDir: dir, configPath });
       try {
+        // 用「刚好超过上限」的请求体而不是远大于上限（如 2MB）：
+        // 请求体远大于上限时，客户端会把整个请求写进 TCP 发送缓冲，
+        // 服务端提前返回 413 并断开连接，Windows 上客户端可能在读到响应前
+        // 先遇到 ECONNRESET——这是传输层的竞态，不是服务端逻辑错误。
+        // 贴近上限断言「超限走统一信封」这一行为即可，且确定性可测。
         const response = await fetch(`${core.ready.endpoint}/v1/observations`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             sessionId: "s",
             source: "host.message",
-            content: "x".repeat(2 * 1024 * 1024),
+            content: "x".repeat(1024 * 1024),
           }),
         });
         assert.equal(response.status, 413, "超限请求应返回 413");
