@@ -1,0 +1,28 @@
+{
+  "name": "oh-my-whale",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "pnpm run build:core && pnpm run build:adapter",
+    "build:core": "cargo build -p oh-my-whale-core",
+    "build:adapter": "pnpm --filter @oh-my-whale/adapter run build",
+    "gen:protocol": "cargo run -q -p oh-my-whale-core --bin export_schema -- packages/adapter/src/generated && node scripts/generate-protocol-types.mjs",
+    "check:protocol": "pnpm run gen:protocol && git diff --exit-code -- packages/adapter/src/generated",
+    "test": "pnpm run test:core && pnpm run check:protocol && pnpm run typecheck && pnpm run test:contract",
+    "test:core": "cargo test --workspace",
+    "test:contract": "pnpm run build:core && node --test tests/contract/core-adapter.test.ts",
+    "typecheck": "pnpm run typecheck:adapter && pnpm run typecheck:contract",
+    "typecheck:adapter": "tsc -p packages/adapter/tsconfig.json --noEmit",
+    "typecheck:contract": "tsc -p tests/contract/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "json-schema-to-typescript": "^16.0.0",
+    "typescript": "^5.9.3"
+  }
+}

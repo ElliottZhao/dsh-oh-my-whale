@@ -18,6 +18,10 @@ _Avoid_: 客户端、插件、client
 运行 Agent 会话的外部程序（如 DeepSeek Harness），Adapter 依附于它。
 _Avoid_: 平台、运行时
 
+**Protocol**:
+Adapter 与 Core 之间的 wire 契约，带主版本号；主版本不同即拒绝沟通。契约类型只在 Core 的 Rust 代码里定义一次，Adapter 的类型与校验器由它生成。
+_Avoid_: API、接口层、RPC
+
 ### 模块
 
 **Perception**:
@@ -68,6 +72,11 @@ _Avoid_: 冷启动、初始化、setup
 
 **Provider**:
 Core 配置里登记的一个模型服务端点，带地址、密钥引用与它声明的能力集合。Core 的出站白名单就是这张表。
+_Avoid_: 模型供应商、服务商配置
+
+**Credential Ref**:
+凭据的引用方式：环境变量名或 Core 自己的密钥文件路径。配置里只存引用，不存密钥值。
+_Avoid_: 密钥、token、api key
 
 **Model Capability**:
 provider 能提供的模型能力类别，按能力而非业务划分：LLM、Embedding、CrossEncoder、Decision。同一个 provider 可声明多种能力。

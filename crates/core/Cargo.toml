@@ -1,0 +1,24 @@
+[package]
+name = "oh-my-whale-core"
+description = "oh-my-whale 的本机常驻内核"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omw_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omw-core"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+rusqlite = { version = "0.43", features = ["bundled"] }
+schemars = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
