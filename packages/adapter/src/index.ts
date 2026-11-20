@@ -24,6 +24,8 @@ export type {
   DegradationCode,
   ErrorBody,
   ErrorPayload,
+  EstimateTokensRequest,
+  EstimateTokensResponse,
   HandshakeRequest,
   HandshakeResponse,
   InjectedItem,

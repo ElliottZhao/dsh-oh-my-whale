@@ -21,15 +21,16 @@ use time::format_description::well_known::Rfc3339;
 use crate::protocol::{
     CODE_INTERNAL_ERROR, CODE_INVALID_CONFIG, CODE_INVALID_REQUEST, CODE_METHOD_NOT_ALLOWED,
     CODE_NOT_FOUND, CODE_PROTOCOL_VERSION_MISMATCH, CoreIdentity, CreateObservationRequest,
-    ErrorBody, ErrorPayload, HandshakeRequest, HandshakeResponse, ObservationList, PROTOCOL_VERSION,
-    ProviderConfig, is_compatible,
+    ErrorBody, ErrorPayload, EstimateTokensRequest, EstimateTokensResponse, HandshakeRequest,
+    HandshakeResponse, ObservationList, PROTOCOL_VERSION, ProviderConfig, is_compatible,
 };
 use crate::provider;
 use crate::state::{DEFAULT_OBSERVATION_LIMIT, MAX_OBSERVATION_LIMIT, SCHEMA_VERSION, StateStore};
+use crate::tokens::{self, HARD_W_HAN};
 
 /// 全部可用接口，用于 404 与 405 的提示，只在这里写一遍。
 const AVAILABLE_ENDPOINTS: &str =
-    "GET /v1/config、PUT /v1/config、GET /v1/observations、POST /v1/observations、POST /v1/handshake";
+    "GET /v1/config、PUT /v1/config、GET /v1/observations、POST /v1/observations、POST /v1/tokens/estimate、POST /v1/handshake";
 
 /// 一次进程启动的共享状态。
 pub struct AppState {
@@ -63,6 +64,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(list_observations).post(create_observation),
         )
         .route("/v1/config", get(read_config).put(write_config))
+        .route("/v1/tokens/estimate", post(estimate_tokens))
         .method_not_allowed_fallback(method_not_allowed)
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
@@ -224,6 +226,32 @@ async fn write_config(
     }
     *current = config;
     Json(provider::snapshot(&current)).into_response()
+}
+
+async fn estimate_tokens(
+    State(_state): State<Arc<AppState>>,
+    request: Result<Bytes, BytesRejection>,
+) -> Response {
+    let body = match request {
+        Ok(body) => body,
+        Err(rejection) => return body_rejection(rejection),
+    };
+    let request: EstimateTokensRequest = match parse_body(
+        &body,
+        "token 估算请求",
+        r#"{"text":"……"}"#,
+    ) {
+        Ok(request) => request,
+        Err(response) => return *response,
+    };
+
+    let tokens = tokens::estimate_tokens_with(&request.text, HARD_W_HAN);
+    Json(EstimateTokensResponse {
+        tokens,
+        message_tokens: tokens::estimate_message_tokens(&request.text),
+        w_han: HARD_W_HAN,
+    })
+    .into_response()
 }
 
 async fn not_found(method: Method, uri: Uri) -> Response {

@@ -11,6 +11,7 @@ import { CoreProtocolError } from "./errors.ts";
 import {
   PROTOCOL_SCHEMA,
   type ErrorBody,
+  type EstimateTokensResponse,
   type HandshakeResponse,
   type Observation,
   type ObservationList,
@@ -38,6 +39,7 @@ const validators = {
   observation: validator<Observation>("Observation"),
   observationList: validator<ObservationList>("ObservationList"),
   providerConfigSnapshot: validator<ProviderConfigSnapshot>("ProviderConfigSnapshot"),
+  estimateTokensResponse: validator<EstimateTokensResponse>("EstimateTokensResponse"),
   errorBody: validator<ErrorBody>("ErrorBody"),
 };
 
@@ -56,6 +58,11 @@ export function parseObservationList(payload: unknown): ObservationList {
 
 export function parseProviderConfigSnapshot(payload: unknown): ProviderConfigSnapshot {
   return assertShape(validators.providerConfigSnapshot, payload, "provider 配置");
+}
+
+/** 校验 Core 的 token 估算响应。 */
+export function parseEstimateTokensResponse(payload: unknown): EstimateTokensResponse {
+  return assertShape(validators.estimateTokensResponse, payload, "token 估算");
 }
 
 /** 读取错误信封；不是信封时返回 `undefined`，由调用方给兜底文案。 */

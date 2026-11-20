@@ -121,6 +121,24 @@ pub struct ObservationList {
     pub observations: Vec<Observation>,
 }
 
+/// 估算一段文本的 token 数。口径由 Core 的 `tokens` 模块唯一实现。
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EstimateTokensRequest {
+    pub text: String,
+}
+
+/// 估算结果。`wHan` 是本次采用的汉字倍率，便于调用方知道预算口径。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EstimateTokensResponse {
+    /// 文本密度 token 数，预算判定用这个值。
+    pub tokens: u32,
+    /// 按 DSH `estimateMessage()` 口径的整条消息 token 数（文本密度 + 8）。
+    pub message_tokens: u32,
+    pub w_han: f64,
+}
+
 /// Ledger 条目的类别：每次出站、每次注入、每次降级、每次写入都各记一类。
 ///
 /// 降级编码表见 [`crate::degrade`]；本类型只定义分类，不定义具体编码。
@@ -302,6 +320,8 @@ pub struct WireContract {
     pub create_observation_request: CreateObservationRequest,
     pub observation: Observation,
     pub observation_list: ObservationList,
+    pub estimate_tokens_request: EstimateTokensRequest,
+    pub estimate_tokens_response: EstimateTokensResponse,
     pub ledger_kind: LedgerKind,
     pub injected_item: InjectedItem,
     pub skipped_recall: SkippedRecall,

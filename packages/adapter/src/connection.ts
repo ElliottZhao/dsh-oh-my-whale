@@ -4,6 +4,7 @@ import {
   PROTOCOL_MAJOR,
   PROTOCOL_VERSION,
   type CreateObservationRequest,
+  type EstimateTokensResponse,
   type HandshakeRequest,
   type HandshakeResponse,
   type Observation,
@@ -12,6 +13,7 @@ import {
   type ProviderConfigSnapshot,
 } from "./generated/protocol.generated.ts";
 import {
+  parseEstimateTokensResponse,
   parseHandshakeResponse,
   parseObservation,
   parseObservationList,
@@ -103,6 +105,17 @@ export class CoreConnection {
   async writeConfig(config: ProviderConfig): Promise<ProviderConfigSnapshot> {
     const payload = await this.request("PUT", "/v1/config", config);
     return parseProviderConfigSnapshot(payload);
+  }
+
+  /**
+   * 让 Core 估算一段文本的 token 数。
+   *
+   * 换算口径只在 Core 实现一次：Adapter 不写第二个除法，也绝不用 `length / 4`
+   * 之类的方式自算。
+   */
+  async estimateTokens(text: string): Promise<EstimateTokensResponse> {
+    const payload = await this.request("POST", "/v1/tokens/estimate", { text });
+    return parseEstimateTokensResponse(payload);
   }
 
   /**

@@ -190,6 +190,46 @@ export const PROTOCOL_SCHEMA: Record<string, unknown> = {
       ],
       "type": "object"
     },
+    "EstimateTokensRequest": {
+      "additionalProperties": false,
+      "description": "估算一段文本的 token 数。口径由 Core 的 `tokens` 模块唯一实现。",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "EstimateTokensResponse": {
+      "description": "估算结果。`wHan` 是本次采用的汉字倍率，便于调用方知道预算口径。",
+      "properties": {
+        "messageTokens": {
+          "description": "按 DSH `estimateMessage()` 口径的整条消息 token 数（文本密度 + 8）。",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tokens": {
+          "description": "文本密度 token 数，预算判定用这个值。",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wHan": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "tokens",
+        "messageTokens",
+        "wHan"
+      ],
+      "type": "object"
+    },
     "HandshakeRequest": {
       "additionalProperties": false,
       "properties": {
@@ -621,6 +661,12 @@ export const PROTOCOL_SCHEMA: Record<string, unknown> = {
     "errorPayload": {
       "$ref": "#/definitions/ErrorPayload"
     },
+    "estimateTokensRequest": {
+      "$ref": "#/definitions/EstimateTokensRequest"
+    },
+    "estimateTokensResponse": {
+      "$ref": "#/definitions/EstimateTokensResponse"
+    },
     "handshakeRequest": {
       "$ref": "#/definitions/HandshakeRequest"
     },
@@ -677,6 +723,8 @@ export const PROTOCOL_SCHEMA: Record<string, unknown> = {
     "createObservationRequest",
     "observation",
     "observationList",
+    "estimateTokensRequest",
+    "estimateTokensResponse",
     "ledgerKind",
     "injectedItem",
     "skippedRecall",
@@ -727,6 +775,8 @@ export interface WireContract {
   credentialRef: CredentialRef;
   errorBody: ErrorBody;
   errorPayload: ErrorPayload;
+  estimateTokensRequest: EstimateTokensRequest;
+  estimateTokensResponse: EstimateTokensResponse;
   handshakeRequest: HandshakeRequest;
   handshakeResponse: HandshakeResponse;
   injectedItem: InjectedItem;
@@ -791,6 +841,26 @@ export interface ErrorPayload {
   code: string;
   details?: unknown;
   message: string;
+}
+/**
+ * 估算一段文本的 token 数。口径由 Core 的 `tokens` 模块唯一实现。
+ */
+export interface EstimateTokensRequest {
+  text: string;
+}
+/**
+ * 估算结果。`wHan` 是本次采用的汉字倍率，便于调用方知道预算口径。
+ */
+export interface EstimateTokensResponse {
+  /**
+   * 按 DSH `estimateMessage()` 口径的整条消息 token 数（文本密度 + 8）。
+   */
+  messageTokens: number;
+  /**
+   * 文本密度 token 数，预算判定用这个值。
+   */
+  tokens: number;
+  wHan: number;
 }
 export interface HandshakeRequest {
   adapterVersion?: string | null;
