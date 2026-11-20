@@ -3,7 +3,7 @@
  * 类型的唯一来源是 `crates/core/src/protocol.rs`：Rust 类型 → JSON Schema → 这里。
  */
 
-export const PROTOCOL_VERSION = "1.0.0";
+export const PROTOCOL_VERSION = "1.1.0";
 export const PROTOCOL_MAJOR = 1;
 
 // 降级编码与跳过原因同样是契约；编码表由 Rust 侧 `degrade` 模块导出。
@@ -574,13 +574,38 @@ export const PROTOCOL_SCHEMA: Record<string, unknown> = {
     },
     "Role": {
       "description": "Core 内部对某类工作的具名需求。",
-      "enum": [
-        "extraction",
-        "queryRewrite",
-        "ranking",
-        "abstention"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "const": "extraction",
+          "description": "Observation → 候选 Memory Item；不做合并、不判冲突。",
+          "type": "string"
+        },
+        {
+          "const": "queryRewrite",
+          "description": "查询改写：把用户问题改写成更适合检索的形式。",
+          "type": "string"
+        },
+        {
+          "const": "ranking",
+          "description": "排序：给候选条目重排。",
+          "type": "string"
+        },
+        {
+          "const": "abstention",
+          "description": "弃权判定：判断这一轮该不该答。",
+          "type": "string"
+        },
+        {
+          "const": "consolidation",
+          "description": "整理：合并重复、让过时事实失效、产出删除提案。",
+          "type": "string"
+        },
+        {
+          "const": "insight",
+          "description": "提炼：把成功的做法或失败教训提炼成 Insight 草案。",
+          "type": "string"
+        }
+      ]
     },
     "RoleBinding": {
       "additionalProperties": false,
@@ -760,7 +785,8 @@ export type LedgerKind = "outbound" | "injection" | "degradation" | "change";
 /**
  * Core 内部对某类工作的具名需求。
  */
-export type Role = "extraction" | "queryRewrite" | "ranking" | "abstention";
+export type Role =
+  "extraction" | "queryRewrite" | "ranking" | "abstention" | "consolidation" | "insight";
 
 /**
  * 导出 JSON Schema 时把全部 wire 类型收进来的根对象。

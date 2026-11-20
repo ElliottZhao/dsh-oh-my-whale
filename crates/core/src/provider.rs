@@ -40,7 +40,7 @@ impl fmt::Display for ConfigError {
             }
             ConfigError::Parse { path, source } => write!(
                 f,
-                "provider 配置 {} 不是合法 JSON：{source}。字段名用 camelCase，能力值是 llm、embedding、crossEncoder、decision，角色值是 extraction、queryRewrite、ranking、abstention。",
+                "provider 配置 {} 不是合法 JSON：{source}。字段名用 camelCase，能力值是 llm、embedding、crossEncoder、decision，角色值是 extraction、queryRewrite、ranking、abstention、consolidation、insight。",
                 path.display()
             ),
             ConfigError::Write { path, source } => {
@@ -281,6 +281,8 @@ fn role_name(role: Role) -> &'static str {
         Role::QueryRewrite => "queryRewrite",
         Role::Ranking => "ranking",
         Role::Abstention => "abstention",
+        Role::Consolidation => "consolidation",
+        Role::Insight => "insight",
     }
 }
 
@@ -386,8 +388,13 @@ mod tests {
         let snapshot = snapshot(&config);
 
         assert_eq!(snapshot.roles.len(), 1);
-        assert_eq!(snapshot.unconfigured_roles.len(), 3, "三个未配置角色应显式列出");
+        assert_eq!(snapshot.unconfigured_roles.len(), 5, "五个未配置角色应显式列出");
         assert!(!snapshot.unconfigured_roles.contains(&Role::Extraction));
+        assert!(
+            snapshot.unconfigured_roles.contains(&Role::Consolidation)
+                && snapshot.unconfigured_roles.contains(&Role::Insight),
+            "新增的整理与提炼角色应出现在未配置列表里",
+        );
         assert_eq!(snapshot.outbound_whitelist.len(), 2);
         assert_eq!(snapshot.roles[0].chain[1].provider, "b", "fallback 顺序应保持");
     }
@@ -458,5 +465,98 @@ mod tests {
         let path = std::env::temp_dir().join("omw-provider-config-missing.json");
         let _ = std::fs::remove_file(&path);
         assert_eq!(load(&path).expect("缺文件应返回空配置"), ProviderConfig::default());
+    }
+
+    #[test]
+    fn all_six_roles_are_listed_and_bindable() {
+        assert_eq!(Role::ALL.len(), 6, "角色闭集应有六个成员");
+        for role in Role::ALL {
+            assert_eq!(
+                role_name(role),
+                serde_json::to_value(role).expect("角色应可序列化")
+                    .as_str()
+                    .expect("角色应序列化成字符串"),
+                "报错里的角色名应与 wire 值一致"
+            );
+        }
+
+        // 六个角色都能绑定，也都能解绑（未绑定时进入 unconfigured_roles）。
+        let providers = vec![
+            provider("llm", vec![Capability::Llm]),
+            provider("rerank", vec![Capability::CrossEncoder]),
+            provider("judge", vec![Capability::Decision]),
+        ];
+        let mut roles = Vec::new();
+        for role in Role::ALL {
+            let capability = role.required_capability();
+            let name = match capability {
+                Capability::Llm => "llm",
+                Capability::CrossEncoder => "rerank",
+                Capability::Decision => "judge",
+                Capability::Embedding => unreachable!("没有角色绑定 embedding"),
+            };
+            roles.push(RoleChain {
+                role,
+                chain: vec![RoleBinding {
+                    provider: name.to_owned(),
+                    capability,
+                }],
+            });
+        }
+        let bound = config(providers.clone(), roles);
+        validate_for_write(&bound).expect("六个角色都应可绑定");
+        let bound_snapshot = snapshot(&bound);
+        assert!(
+            bound_snapshot.unconfigured_roles.is_empty(),
+            "六个角色都绑定后不应有未配置项"
+        );
+
+        let unbound = config(providers, Vec::new());
+        let unbound_snapshot = snapshot(&unbound);
+        assert_eq!(unbound_snapshot.unconfigured_roles.len(), 6, "全部解绑后六个角色都应显式报告");
+    }
+
+    #[test]
+    fn old_four_role_config_loads_and_new_roles_are_reported_unconfigured() {
+        // 旧用户的配置里只有四个角色；新增的整理与提炼必须能正常加载，
+        // 出现在 unconfigured_roles 里，而不是让 Core 启动失败。
+        let raw = r#"{
+            "providers":[{"name":"p","endpoint":"http://x","capabilities":["llm","embedding","crossEncoder","decision"],"credential":{"kind":"env","reference":"PATH"}}],
+            "roles":[
+                {"role":"extraction","chain":[{"provider":"p","capability":"llm"}]},
+                {"role":"queryRewrite","chain":[{"provider":"p","capability":"llm"}]},
+                {"role":"ranking","chain":[{"provider":"p","capability":"crossEncoder"}]},
+                {"role":"abstention","chain":[{"provider":"p","capability":"decision"}]}
+            ]
+        }"#;
+        let loaded: ProviderConfig = serde_json::from_str(raw).expect("旧四角色配置应能加载");
+        validate_at_startup(&loaded).expect("旧配置应通过启动校验");
+
+        let snapshot = snapshot(&loaded);
+        assert_eq!(
+            snapshot.unconfigured_roles,
+            vec![Role::Consolidation, Role::Insight],
+            "只有新增的两个角色应报告未配置",
+        );
+    }
+
+    #[test]
+    fn unknown_role_error_lists_all_six_legal_values() {
+        let raw = r#"{"providers":[],"roles":[{"role":"telepathy","chain":[]}]}"#;
+        let error = serde_json::from_str::<ProviderConfig>(raw).expect_err("应拒绝未知角色");
+        let message = error.to_string();
+        for legal in [
+            "extraction",
+            "queryRewrite",
+            "ranking",
+            "abstention",
+            "consolidation",
+            "insight",
+        ] {
+            assert!(
+                message.contains(legal),
+                "未知角色的报错应列出合法值 {legal}：{message}"
+            );
+        }
     }
 }

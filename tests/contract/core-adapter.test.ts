@@ -494,8 +494,15 @@ describe("两端契约", () => {
         assert.equal(snapshot.providers.length, 0);
         assert.deepEqual(
           [...snapshot.unconfiguredRoles].sort(),
-          ["abstention", "extraction", "queryRewrite", "ranking"],
-          "四个角色都应显式报告未配置",
+          [
+            "abstention",
+            "consolidation",
+            "extraction",
+            "insight",
+            "queryRewrite",
+            "ranking",
+          ],
+          "六个角色都应显式报告未配置",
         );
         assert.deepEqual(snapshot.outboundWhitelist, [], "没有 provider 时出站白名单为空");
         assert.deepEqual(snapshot.degradedProviders, [], "没有 provider 时没有降级项");
@@ -714,6 +721,69 @@ describe("两端契约", () => {
         assert.equal(wrongMethod.status, 405);
         const wrongBody = (await wrongMethod.json()) as { error?: { code?: string } };
         assert.equal(wrongBody.error?.code, "method_not_allowed");
+      } finally {
+        await stopAndRemove([core], [dir]);
+      }
+    });
+  });
+
+  it(`六个能力角色都能绑定，旧四角色配置照常加载（Pass^${PASS_K}）`, async () => {
+    await passK(async () => {
+      const dir = await tempDataDir();
+      const configPath = await tempConfigPath();
+      const core = await startCore({ dataDir: dir, configPath });
+      try {
+        const connection = new CoreConnection({ endpoint: core.ready.endpoint });
+
+        // 旧配置只有四个角色：能加载，新角色报告未配置，而不是启动失败。
+        const legacyRows = [
+          ["extraction", "llm"],
+          ["queryRewrite", "llm"],
+          ["ranking", "crossEncoder"],
+          ["abstention", "decision"],
+        ] as const;
+        const legacy = await connection.writeConfig({
+          providers: [
+            {
+              name: "p",
+              endpoint: "http://127.0.0.1:9201/v1",
+              capabilities: ["llm", "crossEncoder", "decision"],
+              credential: { kind: "env", reference: "PATH" },
+            },
+          ],
+          roles: legacyRows.map(([role, capability]) => ({
+            role,
+            chain: [{ provider: "p", capability }],
+          })),
+        });
+        assert.deepEqual(
+          [...legacy.unconfiguredRoles].sort(),
+          ["consolidation", "insight"],
+          "旧四角色配置应只把新增两个角色报告为未配置",
+        );
+
+        // 六个角色都能绑定；协议次版本升级后，旧 Adapter 仍可握手。
+        const six = await connection.writeConfig({
+          providers: legacy.providers,
+          roles: [
+            { role: "extraction", chain: [{ provider: "p", capability: "llm" }] },
+            { role: "queryRewrite", chain: [{ provider: "p", capability: "llm" }] },
+            { role: "ranking", chain: [{ provider: "p", capability: "crossEncoder" }] },
+            { role: "abstention", chain: [{ provider: "p", capability: "decision" }] },
+            { role: "consolidation", chain: [{ provider: "p", capability: "llm" }] },
+            { role: "insight", chain: [{ provider: "p", capability: "llm" }] },
+          ],
+        });
+        assert.equal(six.roles.length, 6, "六个角色都应绑定");
+        assert.deepEqual(six.unconfiguredRoles, [], "六个角色都绑定后不应有未配置项");
+
+        // 用旧协议次版本握手：主版本一致，不应被拒绝。
+        const oldAdapter = new CoreConnection({
+          endpoint: core.ready.endpoint,
+          protocolVersion: "1.0.0",
+        });
+        const handshake = await oldAdapter.handshake();
+        assert.match(handshake.protocolVersion, /^1\./, "Core 应报告 1.x 协议版本");
       } finally {
         await stopAndRemove([core], [dir]);
       }

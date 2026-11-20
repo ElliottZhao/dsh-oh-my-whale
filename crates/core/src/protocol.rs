@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// 任何请求/响应字段或语义的变更都必须改这里；主版本号不同的 Adapter 会被拒绝。
 /// Adapter 侧的常量由这里生成，不再各写一份。
-pub const PROTOCOL_VERSION: &str = "1.0.0";
+pub const PROTOCOL_VERSION: &str = "1.1.0";
 
 pub const CODE_PROTOCOL_VERSION_MISMATCH: &str = "protocol_version_mismatch";
 pub const CODE_INVALID_REQUEST: &str = "invalid_request";
@@ -213,7 +213,9 @@ pub enum Capability {
 impl Role {
     pub fn required_capability(self) -> Capability {
         match self {
-            Role::Extraction | Role::QueryRewrite => Capability::Llm,
+            Role::Extraction | Role::QueryRewrite | Role::Consolidation | Role::Insight => {
+                Capability::Llm
+            }
             Role::Ranking => Capability::CrossEncoder,
             Role::Abstention => Capability::Decision,
         }
@@ -224,18 +226,28 @@ impl Role {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum Role {
+    /// Observation → 候选 Memory Item；不做合并、不判冲突。
     Extraction,
+    /// 查询改写：把用户问题改写成更适合检索的形式。
     QueryRewrite,
+    /// 排序：给候选条目重排。
     Ranking,
+    /// 弃权判定：判断这一轮该不该答。
     Abstention,
+    /// 整理：合并重复、让过时事实失效、产出删除提案。
+    Consolidation,
+    /// 提炼：把成功的做法或失败教训提炼成 Insight 草案。
+    Insight,
 }
 
 impl Role {
-    pub const ALL: [Role; 4] = [
+    pub const ALL: [Role; 6] = [
         Role::Extraction,
         Role::QueryRewrite,
         Role::Ranking,
         Role::Abstention,
+        Role::Consolidation,
+        Role::Insight,
     ];
 }
 
@@ -357,6 +369,40 @@ mod tests {
     fn unparsable_version_is_rejected() {
         assert!(!is_compatible("garbage", "1.0.0"));
         assert!(!is_compatible("", "1.0.0"));
+    }
+
+    #[test]
+    fn minor_version_bump_keeps_older_adapters_compatible() {
+        // 新增角色属于次版本变更：旧 Adapter 连新 Core 不被拒绝。
+        assert!(is_compatible("1.0.0", PROTOCOL_VERSION));
+        assert!(is_compatible(PROTOCOL_VERSION, "1.0.0"));
+    }
+
+    #[test]
+    fn role_closed_set_has_six_members_with_stable_wire_values() {
+        let values: Vec<String> = Role::ALL
+            .iter()
+            .map(|role| serde_json::to_value(role).expect("序列化角色").as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            values,
+            vec![
+                "extraction",
+                "queryRewrite",
+                "ranking",
+                "abstention",
+                "consolidation",
+                "insight"
+            ],
+            "角色闭集应是六个稳定 wire 值",
+        );
+        for role in Role::ALL {
+            assert_eq!(role.required_capability(), match role {
+                Role::Ranking => Capability::CrossEncoder,
+                Role::Abstention => Capability::Decision,
+                _ => Capability::Llm,
+            });
+        }
     }
 
     #[test]
